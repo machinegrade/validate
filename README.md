@@ -196,8 +196,19 @@ Two things worth knowing about the Workers port:
   here arrive dynamically per request (from the caller), so they can't be
   precompiled at build time either.
 
-## Kill criteria
+## Status
 
-This is a demand-test sandbox for one experiment (see `../experiments/EXP-001-output-validation.md`).
-It's built to be disposable: if the experiment doesn't show demand, delete
-this directory without ceremony.
+Early stage, honestly so: this service is live and free-tier usage is real,
+and we're measuring whether it earns a paid tier. What you can rely on:
+
+- The API contract (`/v1/validate` request/response shapes, typed error
+  codes, verdict semantics) is stable — breaking changes only with a
+  versioned path (`/v2/...`), never silently.
+- The free tier (500 calls/month) stays.
+- If we ever sunset the service, keys keep working for 90 days after the
+  announcement, and the validators are open source in this repo — you can
+  self-host the same behavior.
+
+Feedback and integration stories are the most valuable thing you can give
+us right now: open an issue or use `POST /v1/paid-request` if you need
+more than the free tier.
