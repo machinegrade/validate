@@ -16,7 +16,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 
-const SANDBOX_URL = process.env.SANDBOX_URL ?? "http://localhost:8787";
+const SANDBOX_URL = process.env.SANDBOX_URL ?? "https://api.machinegrade.dev";
 
 const VALIDATE_TOOL = {
   name: "validate",

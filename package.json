@@ -1,12 +1,28 @@
 {
   "name": "@machinegrade/validate",
   "version": "0.1.0",
-  "private": true,
-  "description": "Reusable demand-test sandbox: Hono service with pluggable validators (json_schema, openapi_response, sql), API keys, metering, telemetry funnel, and an MCP adapter.",
+  "description": "Deterministic validation of AI-generated artifacts: JSON Schema conformance, OpenAPI response conformance, SQL syntax. Metered API + MCP adapter with typed verdicts and fix hints.",
   "type": "module",
+  "mcpName": "io.github.machinegrade/validate",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/machinegrade/validate.git"
+  },
+  "homepage": "https://api.machinegrade.dev",
+  "keywords": ["mcp", "mcp-server", "validation", "json-schema", "openapi", "sql", "ai-agents"],
+  "bin": {
+    "machinegrade-validate-mcp": "dist/mcp/server.js"
+  },
+  "files": ["dist/mcp", "README.md"],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json --noEmit false --outDir dist",
+    "build:mcp": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build:mcp",
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
