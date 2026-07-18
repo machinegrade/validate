@@ -2,7 +2,7 @@
 
 Validate AI-generated artifacts against a contract before you act on them:
 
-- **`json_schema`** — validate `artifact` against a JSON Schema (ajv, all errors collected).
+- **`json_schema`** — validate `artifact` against a JSON Schema (all errors collected).
 - **`openapi_response`** — validate a response body against the response schema for a given `path` + `method` + `status` in an OpenAPI spec.
 - **`sql`** — check a SQL string for syntax errors in a given dialect.
 
@@ -11,8 +11,10 @@ HTTP 200 whether the artifact is valid or not. Only genuinely wrong requests
 (bad key, unsupported type, malformed body, over your limit) get typed HTTP
 errors.
 
-Built on Hono — one codebase, runs locally on Node today and is written to
-be Cloudflare Workers-compatible for deploy later (see "Deploy" below).
+Live at **https://api.machinegrade.dev** — free tier, self-service key,
+try it in 30 seconds (first example below). Built on Hono; the same
+codebase runs on Cloudflare Workers (production) and plain Node (local
+dev), and is MIT-licensed if you'd rather self-host.
 
 ## Why
 
@@ -33,14 +35,14 @@ npm run dev
 ### 1. curl
 
 ```bash
-# Get an API key
-curl -s -X POST http://localhost:8787/keys \
+# Get an API key (live service — works as-is)
+curl -s -X POST https://api.machinegrade.dev/keys \
   -H 'content-type: application/json' \
   -d '{"email": "you@example.com"}'
 # => {"key":"sk_..."}
 
 # Validate a JSON artifact against a JSON Schema
-curl -s -X POST http://localhost:8787/v1/validate \
+curl -s -X POST https://api.machinegrade.dev/v1/validate \
   -H 'content-type: application/json' \
   -H 'X-Api-Key: sk_...' \
   -d '{
@@ -194,8 +196,8 @@ counts.
 
 ## Deploy
 
-This template runs on Cloudflare Workers (Hono + D1 + Workers Static
-Assets). To deploy to a fresh Cloudflare account:
+The service runs on Cloudflare Workers (Hono + D1 + Workers Static
+Assets). To self-host on a fresh Cloudflare account:
 
 ```bash
 wrangler d1 create machinegrade-validate-db   # copy the returned database_id into wrangler.toml
