@@ -265,6 +265,17 @@ paths:
                 $ref: "#/components/schemas/Funnel"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /stats/funnel:
+    get:
+      operationId: getStatsFunnel
+      summary: Public aggregate funnel counts (no auth, no PII)
+      responses:
+        "200":
+          description: Funnel
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Funnel"
   /openapi.yaml:
     get:
       operationId: getOpenApiSpec

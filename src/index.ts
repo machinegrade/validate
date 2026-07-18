@@ -166,6 +166,7 @@ export function createApp(options: AppOptions = {}) {
         validate: "POST /v1/validate",
         manifest: "GET /v1/manifest",
         stats: "GET /stats",
+        stats_funnel: "GET /stats/funnel",
         paid_request: "POST /v1/paid-request",
         openapi: "GET /openapi.yaml",
         llms_txt: "GET /llms.txt",
@@ -180,6 +181,15 @@ export function createApp(options: AppOptions = {}) {
       throw invalidKeyError();
     }
     const funnel = await computeFunnel(storage);
+    return c.json(funnel, 200);
+  });
+
+  // GET /stats/funnel — public, aggregate counts only (no keys, no emails).
+  // Exists so external monitors (e.g. a scheduled headless check) can read
+  // the funnel without the admin token; exposes traction numbers by design.
+  app.get("/stats/funnel", async (c) => {
+    const funnel = await computeFunnel(storage);
+    c.header("Cache-Control", "public, max-age=300");
     return c.json(funnel, 200);
   });
 

@@ -21,6 +21,20 @@ describe("GET /stats", () => {
     expect(res.status).toBe(200);
   });
 
+  it("GET /stats/funnel is public and returns aggregate counts only", async () => {
+    const storage = new MemoryStorage();
+    const app = createApp({ storage, adminToken: "secret-token" });
+    await issueKey(app, "public@example.com");
+
+    const res = await app.request("/stats/funnel");
+    expect(res.status).toBe(200);
+    const funnel = (await res.json()) as any;
+    expect(funnel.keys_issued).toBe(1);
+    expect(Object.keys(funnel).sort()).toEqual(
+      ["active_callers", "keys_issued", "limit_hits", "paid_requests", "repeat_callers_7d"].sort()
+    );
+  });
+
   it("computes the funnel: keys_issued, active_callers, limit_hits, paid_requests, repeat_callers_7d", async () => {
     const storage = new MemoryStorage();
     const app = createApp({
