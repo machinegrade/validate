@@ -2,12 +2,14 @@
  * type: "openapi_response" — validate `artifact` (a response body) against
  * the response schema found in an OpenAPI spec object.
  * contract = { spec, path, method, status }.
+ *
+ * Uses @cfworker/json-schema rather than ajv — see the comment in
+ * jsonSchema.ts for why (ajv needs `new Function`, which Workers disallows,
+ * and the response schema arrives dynamically per request).
  */
-import Ajv from "ajv";
+import { Validator } from "@cfworker/json-schema";
 import { malformedInputError } from "../errors.js";
 import type { Verdict, VerdictError, ValidatorInput } from "./common.js";
-
-const ajv = new Ajv({ allErrors: true, strict: false });
 
 interface OpenApiResponseContract {
   spec: any;
@@ -79,9 +81,9 @@ export function validateOpenapiResponse(input: ValidatorInput): Verdict {
     );
   }
 
-  let validateFn;
+  let validator: Validator;
   try {
-    validateFn = ajv.compile(schema);
+    validator = new Validator(schema as Record<string, unknown>, "2019-09", false);
   } catch (err) {
     throw malformedInputError(
       `Response schema is not a valid JSON Schema: ${(err as Error).message}`,
@@ -89,19 +91,19 @@ export function validateOpenapiResponse(input: ValidatorInput): Verdict {
     );
   }
 
-  const valid = validateFn(input.artifact);
-  const errors: VerdictError[] = (validateFn.errors ?? []).map((err) => {
-    const errPath = err.instancePath || "/";
+  const result = validator.validate(input.artifact);
+  const errors: VerdictError[] = result.errors.map((err) => {
+    const errPath = err.instanceLocation.replace(/^#/, "") || "/";
     return {
       path: errPath,
       code: err.keyword,
-      message: err.message ?? "validation error",
-      fix_hint: `Fix "${err.message}" at ${errPath} to match the response schema for ${String(method).toUpperCase()} ${path} -> ${status}.`,
+      message: err.error,
+      fix_hint: `Fix "${err.error}" at ${errPath} to match the response schema for ${String(method).toUpperCase()} ${path} -> ${status}.`,
     };
   });
 
   return {
-    valid: !!valid,
+    valid: result.valid,
     errors,
     latency_ms: Math.max(0, Math.round(performance.now() - start)),
   };

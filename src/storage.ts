@@ -1,10 +1,11 @@
 /**
  * Storage interface + two implementations:
  *  - MemoryStorage: full in-memory implementation, used in dev and tests.
- *  - D1Storage: stub for a Cloudflare D1 binding. Methods are present so the
- *    rest of the app can depend on the same interface, but every method
- *    throws until the binding is wired up at deploy time (phase P2).
+ *  - D1Storage: real Cloudflare D1 binding, backed by schema.sql
+ *    (tables `keys`, `events`). Used in production (`wrangler deploy`).
  */
+
+import type { D1Database } from "@cloudflare/workers-types";
 
 export type TelemetryEventType = "key_issued" | "call" | "limit_hit" | "paid_request";
 
@@ -93,38 +94,107 @@ export class MemoryStorage implements Storage {
   }
 }
 
-const D1_NOT_WIRED = "D1 storage not wired until deploy";
+interface KeyRow {
+  key: string;
+  email: string;
+  created_at: number;
+}
 
-/**
- * Stub Cloudflare D1 implementation. Present so production code can depend
- * on the `Storage` interface uniformly; actual D1 binding + SQL wiring
- * happens in phase P2 (`wrangler deploy` with a real D1 database bound in
- * wrangler.toml).
- */
+interface EventRow {
+  id: string;
+  type: TelemetryEventType;
+  key: string;
+  email: string | null;
+  validator_type: string | null;
+  valid: number | null;
+  latency_ms: number | null;
+  timestamp: number;
+}
+
+function keyRowToRecord(row: KeyRow): KeyRecord {
+  return { key: row.key, email: row.email, created_at: row.created_at };
+}
+
+function eventRowToRecord(row: EventRow): TelemetryEvent {
+  return {
+    id: row.id,
+    type: row.type,
+    key: row.key,
+    email: row.email ?? undefined,
+    validator_type: row.validator_type ?? undefined,
+    valid: row.valid === null ? undefined : row.valid === 1,
+    latency_ms: row.latency_ms ?? undefined,
+    timestamp: row.timestamp,
+  };
+}
+
+/** Cloudflare D1 implementation, backed by schema.sql (`keys`, `events`). */
 export class D1Storage implements Storage {
-  private readonly d1: unknown;
+  private readonly d1: D1Database;
 
-  constructor(d1?: unknown) {
+  constructor(d1: D1Database) {
     this.d1 = d1;
   }
 
-  async createKey(_record: KeyRecord): Promise<void> {
-    throw new Error(D1_NOT_WIRED);
+  async createKey(record: KeyRecord): Promise<void> {
+    await this.d1
+      .prepare("INSERT INTO keys (key, email, created_at) VALUES (?, ?, ?)")
+      .bind(record.key, record.email, record.created_at)
+      .run();
   }
 
-  async getKey(_key: string): Promise<KeyRecord | null> {
-    throw new Error(D1_NOT_WIRED);
+  async getKey(key: string): Promise<KeyRecord | null> {
+    const row = await this.d1
+      .prepare("SELECT key, email, created_at FROM keys WHERE key = ?")
+      .bind(key)
+      .first<KeyRow>();
+    return row ? keyRowToRecord(row) : null;
   }
 
   async listKeys(): Promise<KeyRecord[]> {
-    throw new Error(D1_NOT_WIRED);
+    const { results } = await this.d1.prepare("SELECT key, email, created_at FROM keys").all<KeyRow>();
+    return results.map(keyRowToRecord);
   }
 
-  async recordEvent(_event: TelemetryEvent): Promise<void> {
-    throw new Error(D1_NOT_WIRED);
+  async recordEvent(event: TelemetryEvent): Promise<void> {
+    await this.d1
+      .prepare(
+        `INSERT INTO events (id, type, key, email, validator_type, valid, latency_ms, timestamp)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .bind(
+        event.id,
+        event.type,
+        event.key,
+        event.email ?? null,
+        event.validator_type ?? null,
+        event.valid === undefined ? null : event.valid ? 1 : 0,
+        event.latency_ms ?? null,
+        event.timestamp
+      )
+      .run();
   }
 
-  async listEvents(_filter?: EventFilter): Promise<TelemetryEvent[]> {
-    throw new Error(D1_NOT_WIRED);
+  async listEvents(filter?: EventFilter): Promise<TelemetryEvent[]> {
+    const clauses: string[] = [];
+    const params: (string | number)[] = [];
+    if (filter?.type) {
+      clauses.push("type = ?");
+      params.push(filter.type);
+    }
+    if (filter?.key) {
+      clauses.push("key = ?");
+      params.push(filter.key);
+    }
+    if (filter?.since !== undefined) {
+      clauses.push("timestamp >= ?");
+      params.push(filter.since);
+    }
+    const where = clauses.length > 0 ? ` WHERE ${clauses.join(" AND ")}` : "";
+    const stmt = this.d1.prepare(
+      `SELECT id, type, key, email, validator_type, valid, latency_ms, timestamp FROM events${where} ORDER BY timestamp ASC`
+    );
+    const { results } = await (params.length > 0 ? stmt.bind(...params) : stmt).all<EventRow>();
+    return results.map(eventRowToRecord);
   }
 }

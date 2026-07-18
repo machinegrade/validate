@@ -12,19 +12,16 @@ port = 8787
 # ADMIN_TOKEN   - required in production; defaults to "dev-admin" locally.
 
 # --- D1 (phase P2, owner's Cloudflare account) ---
-# Uncomment once a D1 database has been created (`wrangler d1 create machinegrade-validate-db`)
-# and src/storage.ts's D1Storage has real queries wired in place of the
-# "not wired until deploy" stubs.
-# [[d1_databases]]
-# binding = "DB"
-# database_name = "machinegrade-validate-db"
-# database_id = "<fill in after `wrangler d1 create`>"
+# database_id below is a placeholder for local dev only (`wrangler dev` /
+# `wrangler d1 execute --local`). Before deploying, run
+# `wrangler d1 create machinegrade-validate-db` and replace it with the
+# real id from that command's output.
+[[d1_databases]]
+binding = "DB"
+database_name = "machinegrade-validate-db"
+database_id = "00000000-0000-0000-0000-000000000000"
 
-# --- Static assets (openapi.yaml, public/llms.txt) ---
-# src/index.ts currently serves these via node:fs, which only works under
-# Node (`npm run dev` / tests). For a real Workers deploy, switch to
-# Workers Static Assets instead:
-# [assets]
-# directory = "public"
-# binding = "ASSETS"
-# (and copy openapi.yaml into public/, or add a second assets directory)
+# --- Static assets (public/openapi.yaml, public/llms.txt) ---
+[assets]
+directory = "public"
+binding = "ASSETS"

@@ -101,7 +101,7 @@ print(resp.status_code, resp.headers.get("X-Calls-Remaining"), resp.json())
 
 ## API
 
-See [`openapi.yaml`](./openapi.yaml) for the full contract, or
+See [`public/openapi.yaml`](./public/openapi.yaml) for the full contract, or
 [`/v1/manifest`](http://localhost:8787/v1/manifest) for a machine-readable
 summary (types, limits, pricing, error codes) once the service is running.
 [`/llms.txt`](./public/llms.txt) is a short pointer for LLM agents.
@@ -144,10 +144,16 @@ invalid artifact is a normal, expected outcome and returns HTTP 200.
 
 - `MemoryStorage` — full in-memory implementation, used for `npm run dev`
   and the test suite.
-- `D1Storage` — stub for a Cloudflare D1 binding. The methods exist so the
-  rest of the app depends on one interface, but each currently throws
-  `"D1 storage not wired until deploy"`. Wiring real D1 queries is phase P2
-  work (needs the owner's Cloudflare account).
+- `D1Storage` — real Cloudflare D1 binding, backed by `schema.sql` (`keys`,
+  `events` tables). Used in production; the Workers entry point in
+  `src/index.ts` builds it from the `DB` binding on first request.
+
+Apply `schema.sql` to a new D1 database with:
+
+```bash
+wrangler d1 execute machinegrade-validate-db --file=schema.sql          # local
+wrangler d1 execute machinegrade-validate-db --file=schema.sql --remote # production
+```
 
 ## Testing
 
@@ -161,16 +167,34 @@ Tests cover: key issuance, happy + fail cases for each validator, typed
 they don't require looping hundreds of real requests), and `/stats` funnel
 counts.
 
-## Deploy (phase P2 — not done here)
+## Deploy
 
-This template is written to be Cloudflare Workers-compatible (Hono runs
-unmodified there), but is not deployed as part of this phase — that needs
-the owner's Cloudflare account, a D1 database, and GitHub secrets. See
-`wrangler.toml` and the commented `deploy` job in
-`.github/workflows/ci.yml` for what's needed. One known gap to close before
-deploying: `GET /openapi.yaml` and `GET /llms.txt` currently read from disk
-via `node:fs`, which works locally but not on Workers — switch those two
-routes to Workers Static Assets (see the comment in `src/index.ts`).
+This template runs on Cloudflare Workers (Hono + D1 + Workers Static
+Assets). To deploy to a fresh Cloudflare account:
+
+```bash
+wrangler d1 create machinegrade-validate-db   # copy the returned database_id into wrangler.toml
+wrangler d1 execute machinegrade-validate-db --file=schema.sql --remote
+wrangler secret put ADMIN_TOKEN
+wrangler deploy
+```
+
+Then bind a custom domain (e.g. `api.machinegrade.dev`) to the Worker via
+the Cloudflare dashboard or `wrangler`. CI can deploy on push to `main` once
+`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets are set and
+the `deploy` job in `.github/workflows/ci.yml` is uncommented.
+
+Two things worth knowing about the Workers port:
+
+- `GET /openapi.yaml` and `GET /llms.txt` are served by the `ASSETS` binding
+  (`[assets]` in `wrangler.toml`, pointing at `public/`) — Cloudflare serves
+  them directly, without invoking the Worker. The routes in `src/index.ts`
+  are a fallback for local Node dev/tests, where there's no ASSETS binding.
+- The `json_schema` and `openapi_response` validators use
+  `@cfworker/json-schema`, not `ajv`: ajv compiles schemas via
+  `new Function(...)`, which the Workers runtime disallows, and schemas
+  here arrive dynamically per request (from the caller), so they can't be
+  precompiled at build time either.
 
 ## Kill criteria
 

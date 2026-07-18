@@ -1,27 +1,28 @@
 import { Hono } from "hono";
-import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
 import path from "node:path";
+import type { D1Database, ExecutionContext } from "@cloudflare/workers-types";
 import { AuthService, DEFAULT_AUTH_CONFIG, type AuthConfig } from "./auth.js";
 import { ApiError, invalidKeyError, malformedInputError, unsupportedTypeError } from "./errors.js";
-import { MemoryStorage, type Storage } from "./storage.js";
+import { D1Storage, MemoryStorage, type Storage } from "./storage.js";
 import { computeFunnel, recordCall, recordKeyIssued, recordPaidRequest } from "./telemetry.js";
 import { validateJsonSchema } from "./validators/jsonSchema.js";
 import { validateOpenapiResponse } from "./validators/openapiResponse.js";
 import { validateSql } from "./validators/sql.js";
 import type { Verdict, ValidatorInput } from "./validators/common.js";
 
-// NOTE on Cloudflare Workers portability: GET /openapi.yaml and GET /llms.txt
-// below read from the local filesystem (node:fs), which works for `npm run
-// dev` and the test suite (both run on Node) but is a Node-only API. Actual
-// `wrangler deploy` (phase P2, out of scope here — needs the owner's
-// Cloudflare account) should switch these two routes to Workers Static
-// Assets (an `[assets]` binding in wrangler.toml pointing at `public/`,
-// with a copy of openapi.yaml alongside llms.txt) or inline the file
-// contents as string constants at build time. Everything else in this file
-// only uses Hono + the Storage interface, which are Workers-compatible.
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(__dirname, "..");
+// GET /openapi.yaml and GET /llms.txt are served two ways:
+//  - On Workers (`wrangler deploy`), the `ASSETS` binding (see wrangler.toml
+//    `[assets]`, directory `public/`) serves both files directly — Cloudflare
+//    intercepts matching requests before the Worker even runs, so the routes
+//    below are only reached as a fallback.
+//  - Locally (`npm run dev` / tests), there is no ASSETS binding, so the
+//    routes read straight from `public/` via `node:fs`. The path is resolved
+//    lazily (not at module scope) since `import.meta.url`-based path
+//    resolution isn't reliable under the Workers runtime.
+function publicDir(): string {
+  const here = new URL(".", import.meta.url).pathname;
+  return path.resolve(here, "..", "public");
+}
 
 export const VALIDATOR_TYPES = ["json_schema", "openapi_response", "sql"] as const;
 export type ValidatorType = (typeof VALIDATOR_TYPES)[number];
@@ -195,22 +196,28 @@ export function createApp(options: AppOptions = {}) {
     );
   });
 
-  // GET /openapi.yaml, GET /llms.txt — static docs (see NOTE above re: Workers).
+  // GET /openapi.yaml, GET /llms.txt — static docs. Normally intercepted by
+  // the Workers ASSETS binding before reaching the Worker (see comment near
+  // `publicDir` above); these handlers are the fallback (Node dev/tests, or
+  // an ASSETS binding that didn't match for some reason).
   app.get("/openapi.yaml", async (c) => {
-    const text = await readFile(path.join(ROOT, "openapi.yaml"), "utf-8");
+    const assets = (c.env as Env | undefined)?.ASSETS;
+    if (assets) return assets.fetch(c.req.raw);
+    const { readFile } = await import("node:fs/promises");
+    const text = await readFile(path.join(publicDir(), "openapi.yaml"), "utf-8");
     return c.text(text, 200, { "Content-Type": "application/yaml; charset=utf-8" });
   });
 
   app.get("/llms.txt", async (c) => {
-    const text = await readFile(path.join(ROOT, "public", "llms.txt"), "utf-8");
+    const assets = (c.env as Env | undefined)?.ASSETS;
+    if (assets) return assets.fetch(c.req.raw);
+    const { readFile } = await import("node:fs/promises");
+    const text = await readFile(path.join(publicDir(), "llms.txt"), "utf-8");
     return c.text(text, 200, { "Content-Type": "text/plain; charset=utf-8" });
   });
 
   return app;
 }
-
-const app = createApp();
-export default app;
 
 // Only start an HTTP listener when this file is run directly (`npm run
 // dev` / `npm start`), not when imported by tests or the Workers bundle.
@@ -222,8 +229,42 @@ const isMain = (() => {
 
 if (isMain) {
   const { serve } = await import("@hono/node-server");
+  const nodeApp = createApp();
   const port = Number(process.env.PORT ?? 8787);
-  serve({ fetch: app.fetch, port }, (info) => {
+  serve({ fetch: nodeApp.fetch, port }, (info) => {
     console.log(`machinegrade validate listening on http://localhost:${info.port}`);
   });
 }
+
+/**
+ * Workers Static Assets binding, typed against the ambient (lib.dom-less)
+ * Request/Response used elsewhere in this file — not `@cloudflare/workers-
+ * types`' `Fetcher`, whose Request/Response are structurally distinct and
+ * don't line up with `c.req.raw` / Hono's return type.
+ */
+interface AssetsBinding {
+  fetch(request: Request): Promise<Response>;
+}
+
+/** Workers bindings, set in wrangler.toml / `wrangler secret put`. */
+export interface Env {
+  DB?: D1Database;
+  ASSETS?: AssetsBinding;
+  ADMIN_TOKEN?: string;
+}
+
+// Workers entry point (`wrangler deploy`). Bindings are only available
+// inside the request handler, not at module-eval time, so the app is built
+// lazily on first request and memoized for the isolate's lifetime — D1
+// bindings are constant for a given deployment, so this is safe.
+let workersApp: ReturnType<typeof createApp> | undefined;
+
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    workersApp ??= createApp({
+      storage: env.DB ? new D1Storage(env.DB) : new MemoryStorage(),
+      adminToken: env.ADMIN_TOKEN,
+    });
+    return workersApp.fetch(request, env as never, ctx);
+  },
+};
