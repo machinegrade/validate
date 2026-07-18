@@ -15,36 +15,13 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { VALIDATE_TOOL } from "../src/validateTool.js";
 
 const SANDBOX_URL = process.env.SANDBOX_URL ?? "https://api.machinegrade.dev";
 
-const VALIDATE_TOOL = {
-  name: "validate",
-  description:
-    "Validate an artifact against a contract (json_schema | openapi_response | sql) via the machinegrade validate HTTP API's POST /v1/validate.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      type: {
-        type: "string",
-        enum: ["json_schema", "openapi_response", "sql"],
-        description: "Which validator to run.",
-      },
-      artifact: {
-        description: "The artifact to validate (object for json_schema/openapi_response, SQL string for sql).",
-      },
-      contract: {
-        description:
-          "Validator-specific contract. json_schema: { schema }. openapi_response: { spec, path, method, status }. sql: { dialect }.",
-      },
-    },
-    required: ["type", "artifact"],
-  },
-} as const;
-
 function buildServer(): Server {
   const server = new Server(
-    { name: "machinegrade-validate-mcp", version: "0.1.0" },
+    { name: "machinegrade-validate-mcp", version: "0.1.1" },
     { capabilities: { tools: {} } }
   );
 

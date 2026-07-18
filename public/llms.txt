@@ -36,6 +36,10 @@ MALFORMED_INPUT (400), RATE_LIMITED (429).
 
 ## MCP
 
-An MCP stdio adapter (mcp/server.ts) exposes a single tool, "validate",
-that forwards to POST /v1/validate. Configure with env vars SANDBOX_URL
-and SANDBOX_API_KEY.
+Remote MCP (streamable HTTP): POST https://api.machinegrade.dev/mcp,
+same single tool "validate". initialize/tools/list need no auth;
+tools/call requires header X-Api-Key.
+
+An MCP stdio adapter (mcp/server.ts, npm package @machinegrade/validate)
+exposes the same tool, forwarding to POST /v1/validate. Configure with
+env vars SANDBOX_URL and SANDBOX_API_KEY.

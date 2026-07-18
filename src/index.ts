@@ -1,14 +1,13 @@
 import { Hono } from "hono";
 import path from "node:path";
 import type { D1Database, ExecutionContext } from "@cloudflare/workers-types";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { AuthService, DEFAULT_AUTH_CONFIG, type AuthConfig } from "./auth.js";
-import { ApiError, invalidKeyError, malformedInputError, unsupportedTypeError } from "./errors.js";
+import { ApiError, invalidKeyError, malformedInputError } from "./errors.js";
+import { buildMcpServer } from "./mcpServer.js";
 import { D1Storage, MemoryStorage, type Storage } from "./storage.js";
-import { computeFunnel, recordCall, recordKeyIssued, recordPaidRequest } from "./telemetry.js";
-import { validateJsonSchema } from "./validators/jsonSchema.js";
-import { validateOpenapiResponse } from "./validators/openapiResponse.js";
-import { validateSql } from "./validators/sql.js";
-import type { Verdict, ValidatorInput } from "./validators/common.js";
+import { computeFunnel, recordKeyIssued, recordPaidRequest } from "./telemetry.js";
+import { VALIDATOR_TYPES, processValidate } from "./validate.js";
 
 // GET /openapi.yaml and GET /llms.txt are served two ways:
 //  - On Workers (`wrangler deploy`), the `ASSETS` binding (see wrangler.toml
@@ -23,15 +22,6 @@ function publicDir(): string {
   const here = new URL(".", import.meta.url).pathname;
   return path.resolve(here, "..", "public");
 }
-
-export const VALIDATOR_TYPES = ["json_schema", "openapi_response", "sql"] as const;
-export type ValidatorType = (typeof VALIDATOR_TYPES)[number];
-
-const VALIDATORS: Record<ValidatorType, (input: ValidatorInput) => Verdict | Promise<Verdict>> = {
-  json_schema: validateJsonSchema,
-  openapi_response: validateOpenapiResponse,
-  sql: validateSql,
-};
 
 export interface Pricing {
   free_calls_per_month: number;
@@ -117,27 +107,24 @@ export function createApp(options: AppOptions = {}) {
     const keyRecord = await auth.requireKey(c.req.header("X-Api-Key"));
     const body = await parseJsonBody(c);
 
-    const type = body?.type;
-    if (typeof type !== "string") {
-      throw malformedInputError('"type" is required and must be a string.', `Set "type" to one of: ${VALIDATOR_TYPES.join(", ")}.`);
-    }
-    if (!(VALIDATOR_TYPES as readonly string[]).includes(type)) {
-      throw unsupportedTypeError(type, [...VALIDATOR_TYPES]);
-    }
-    const hasArtifact = !!body && typeof body === "object" && "artifact" in body;
-    if (!hasArtifact) {
-      throw malformedInputError('"artifact" is required.', 'Include the artifact to validate as "artifact" in the request body.');
-    }
-
-    const { remaining } = await auth.checkLimits(keyRecord.key);
-
-    const validatorFn = VALIDATORS[type as ValidatorType];
-    const verdict = await validatorFn({ artifact: body.artifact, contract: body.contract });
-
-    await recordCall(storage, keyRecord.key, type, verdict.valid, verdict.latency_ms);
+    const { verdict, remaining } = await processValidate(storage, auth, keyRecord, body);
 
     c.header("X-Calls-Remaining", String(Math.max(remaining, 0)));
     return c.json(verdict, 200);
+  });
+
+  // POST/GET/DELETE /mcp — remote MCP endpoint (streamable HTTP), same
+  // "validate" tool as mcp/server.ts. Stateless: a fresh Server + transport
+  // per request, since there's no session state to keep across requests
+  // and Workers isolates don't guarantee request affinity anyway.
+  app.all("/mcp", async (c) => {
+    const server = buildMcpServer({ storage, auth });
+    const transport = new WebStandardStreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+      enableJsonResponse: true,
+    });
+    await server.connect(transport);
+    return transport.handleRequest(c.req.raw);
   });
 
   // GET /v1/manifest
@@ -170,6 +157,7 @@ export function createApp(options: AppOptions = {}) {
         paid_request: "POST /v1/paid-request",
         openapi: "GET /openapi.yaml",
         llms_txt: "GET /llms.txt",
+        mcp: "POST /mcp",
       },
     });
   });

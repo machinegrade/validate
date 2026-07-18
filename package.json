@@ -1,6 +1,6 @@
 {
   "name": "@machinegrade/validate",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Deterministic validation of AI-generated artifacts: JSON Schema conformance, OpenAPI response conformance, SQL syntax. Metered API + MCP adapter with typed verdicts and fix hints.",
   "type": "module",
   "mcpName": "io.github.machinegrade/validate",
@@ -14,7 +14,7 @@
   "bin": {
     "machinegrade-validate-mcp": "dist/mcp/server.js"
   },
-  "files": ["dist/mcp", "README.md"],
+  "files": ["dist/mcp", "dist/src", "README.md"],
   "publishConfig": {
     "access": "public"
   },

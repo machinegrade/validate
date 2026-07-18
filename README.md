@@ -99,6 +99,30 @@ print(resp.status_code, resp.headers.get("X-Calls-Remaining"), resp.json())
 }
 ```
 
+## Connect remotely
+
+The production service also exposes an MCP endpoint directly — no local
+process, no npm install — via streamable HTTP at:
+
+```
+POST https://api.machinegrade.dev/mcp
+```
+
+It's the same single `validate` tool as the stdio adapter above.
+`initialize` and `tools/list` work without a key (discovery is
+anonymous); `tools/call` requires `X-Api-Key` (issue one via `POST
+/keys`, same as the REST API — the free tier and limits are shared).
+
+With Claude Code:
+
+```bash
+claude mcp add --transport http validate https://api.machinegrade.dev/mcp --header "X-Api-Key: sk_..."
+```
+
+The stdio adapter via npm (`@machinegrade/validate`, see above) remains
+available for local/offline use or clients without HTTP transport
+support.
+
 ## API
 
 See [`public/openapi.yaml`](./public/openapi.yaml) for the full contract, or
@@ -114,6 +138,7 @@ summary (types, limits, pricing, error codes) once the service is running.
 | `GET /stats` | header `X-Admin-Token` | funnel: keys_issued, active_callers, repeat_callers_7d, limit_hits, paid_requests |
 | `POST /v1/paid-request` | header `X-Api-Key` | records interest in paid access |
 | `GET /openapi.yaml`, `GET /llms.txt` | — | static docs |
+| `POST /mcp` | MCP streamable HTTP, header `X-Api-Key` for `tools/call` | see "Connect remotely" above |
 
 ## Pricing
 
