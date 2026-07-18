@@ -1,0 +1,30 @@
+name = "machinegrade-validate"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Local dev via `wrangler dev` uses this port; `npm run dev` (tsx + @hono/node-server)
+# is the primary local dev path for this template and uses PORT (default 8787) instead.
+[dev]
+port = 8787
+
+# --- Secrets (set via `wrangler secret put <NAME>`, not committed) ---
+# ADMIN_TOKEN   - required in production; defaults to "dev-admin" locally.
+
+# --- D1 (phase P2, owner's Cloudflare account) ---
+# Uncomment once a D1 database has been created (`wrangler d1 create machinegrade-validate-db`)
+# and src/storage.ts's D1Storage has real queries wired in place of the
+# "not wired until deploy" stubs.
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "machinegrade-validate-db"
+# database_id = "<fill in after `wrangler d1 create`>"
+
+# --- Static assets (openapi.yaml, public/llms.txt) ---
+# src/index.ts currently serves these via node:fs, which only works under
+# Node (`npm run dev` / tests). For a real Workers deploy, switch to
+# Workers Static Assets instead:
+# [assets]
+# directory = "public"
+# binding = "ASSETS"
+# (and copy openapi.yaml into public/, or add a second assets directory)

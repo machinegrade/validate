@@ -1,0 +1,289 @@
+openapi: 3.0.3
+info:
+  title: machinegrade validate
+  version: "0.1.0"
+  description: >
+    Validate AI-generated artifacts against a contract: JSON Schema
+    conformance, OpenAPI response conformance, or SQL syntax. Free tier:
+    500 calls/month per key, 60 calls/minute naive rate limit.
+servers:
+  - url: https://api.machinegrade.dev
+    description: Production
+  - url: http://localhost:8787
+    description: Local dev
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+    AdminTokenAuth:
+      type: apiKey
+      in: header
+      name: X-Admin-Token
+  schemas:
+    TypedError:
+      type: object
+      required: [code, message, hint, docs_url]
+      properties:
+        code:
+          type: string
+          enum: [INVALID_KEY, LIMIT_EXCEEDED, UNSUPPORTED_TYPE, MALFORMED_INPUT, RATE_LIMITED]
+        message:
+          type: string
+        hint:
+          type: string
+        docs_url:
+          type: string
+    VerdictError:
+      type: object
+      required: [path, code, message, fix_hint]
+      properties:
+        path:
+          type: string
+        code:
+          type: string
+        message:
+          type: string
+        fix_hint:
+          type: string
+    Verdict:
+      type: object
+      required: [valid, errors, latency_ms]
+      properties:
+        valid:
+          type: boolean
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/VerdictError"
+        latency_ms:
+          type: number
+    ValidateRequest:
+      type: object
+      required: [type, artifact]
+      properties:
+        type:
+          type: string
+          enum: [json_schema, openapi_response, sql]
+        artifact:
+          description: >
+            The artifact to validate. An object for json_schema and
+            openapi_response, a SQL string for sql.
+        contract:
+          description: >
+            Validator-specific contract. json_schema: { schema }.
+            openapi_response: { spec, path, method, status }.
+            sql: { dialect }.
+    Funnel:
+      type: object
+      required: [keys_issued, active_callers, repeat_callers_7d, limit_hits, paid_requests]
+      properties:
+        keys_issued:
+          type: integer
+        active_callers:
+          type: integer
+        repeat_callers_7d:
+          type: integer
+        limit_hits:
+          type: integer
+        paid_requests:
+          type: integer
+    Manifest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        capability:
+          type: string
+        types:
+          type: array
+          items:
+            type: string
+        auth:
+          type: object
+        limits:
+          type: object
+          properties:
+            free_calls_per_month:
+              type: integer
+            rate_limit_per_minute:
+              type: integer
+        pricing:
+          type: object
+          properties:
+            free_calls_per_month:
+              type: integer
+            paid_price_eur_per_call:
+              type: number
+            paid_access:
+              type: string
+        error_codes:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+              status:
+                type: integer
+        endpoints:
+          type: object
+  responses:
+    Unauthorized:
+      description: Invalid or missing API key
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/TypedError"
+    PaymentRequired:
+      description: Free-tier limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/TypedError"
+    BadRequest:
+      description: Unsupported type or malformed input
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/TypedError"
+    TooManyRequests:
+      description: Naive rate limit exceeded (60/min per key)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/TypedError"
+paths:
+  /keys:
+    post:
+      operationId: issueKey
+      summary: Issue an API key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        "201":
+          description: Key issued
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [key]
+                properties:
+                  key:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /v1/validate:
+    post:
+      operationId: validate
+      summary: Validate an artifact against a contract
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ValidateRequest"
+      responses:
+        "200":
+          description: >
+            Verdict. Always HTTP 200, even when the artifact is invalid —
+            "invalid" is a normal outcome, not an error.
+          headers:
+            X-Calls-Remaining:
+              description: Free-tier calls remaining this month for this key
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Verdict"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "402":
+          $ref: "#/components/responses/PaymentRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+  /v1/manifest:
+    get:
+      operationId: getManifest
+      summary: Machine-readable capability manifest
+      responses:
+        "200":
+          description: Manifest
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Manifest"
+  /v1/paid-request:
+    post:
+      operationId: requestPaidAccess
+      summary: Record interest in paid access (paid tier opens soon)
+      security:
+        - ApiKeyAuth: []
+      responses:
+        "202":
+          description: Request received
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /stats:
+    get:
+      operationId: getStats
+      summary: Funnel stats (admin only)
+      security:
+        - AdminTokenAuth: []
+      responses:
+        "200":
+          description: Funnel
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Funnel"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /openapi.yaml:
+    get:
+      operationId: getOpenApiSpec
+      summary: This OpenAPI spec
+      responses:
+        "200":
+          description: OpenAPI spec (YAML)
+          content:
+            application/yaml:
+              schema:
+                type: string
+  /llms.txt:
+    get:
+      operationId: getLlmsTxt
+      summary: Short machine-readable description for LLM agents
+      responses:
+        "200":
+          description: llms.txt
+          content:
+            text/plain:
+              schema:
+                type: string

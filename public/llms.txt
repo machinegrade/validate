@@ -1,0 +1,41 @@
+# machinegrade validate
+
+> Validate AI-generated artifacts against a contract before you ship them:
+> JSON Schema conformance, OpenAPI response conformance, or SQL syntax.
+> Built for agents that generate structured output and need a fast,
+> machine-checkable pass/fail before acting on it.
+
+Base URL: https://api.machinegrade.dev (or the host you fetched this file from).
+Source: https://github.com/machinegrade/validate
+
+## Quick start
+
+1. `POST /keys` with `{"email": "you@example.com"}` to get an API key.
+2. `POST /v1/validate` with header `X-Api-Key: <key>` and body
+   `{"type": "json_schema" | "openapi_response" | "sql", "artifact": ..., "contract": ...}`.
+3. Read the verdict: `{"valid": bool, "errors": [{path, code, message, fix_hint}], "latency_ms": number}`.
+   HTTP 200 even when `valid` is false — invalid is a normal outcome, not
+   an error.
+
+## Machine-readable docs
+
+- Full capability manifest (types, limits, pricing, error codes): /v1/manifest
+- Full API contract: /openapi.yaml
+
+## Limits & pricing
+
+- Free tier: 500 calls/month per key, 60 calls/minute rate limit.
+- Paid tier: EUR 0.002/call beyond the free tier — opens soon. Request
+  access with `POST /v1/paid-request` (requires X-Api-Key).
+
+## Errors
+
+Typed JSON errors only: `{code, message, hint, docs_url}`. Codes:
+INVALID_KEY (401), LIMIT_EXCEEDED (402), UNSUPPORTED_TYPE (400),
+MALFORMED_INPUT (400), RATE_LIMITED (429).
+
+## MCP
+
+An MCP stdio adapter (mcp/server.ts) exposes a single tool, "validate",
+that forwards to POST /v1/validate. Configure with env vars SANDBOX_URL
+and SANDBOX_API_KEY.
