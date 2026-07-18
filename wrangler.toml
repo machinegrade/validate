@@ -3,6 +3,11 @@ main = "src/index.ts"
 compatibility_date = "2024-11-01"
 compatibility_flags = ["nodejs_compat"]
 
+# --- Custom domain (machinegrade.dev is a Cloudflare zone) ---
+routes = [
+  { pattern = "api.machinegrade.dev", custom_domain = true }
+]
+
 # Local dev via `wrangler dev` uses this port; `npm run dev` (tsx + @hono/node-server)
 # is the primary local dev path for this template and uses PORT (default 8787) instead.
 [dev]
@@ -11,15 +16,11 @@ port = 8787
 # --- Secrets (set via `wrangler secret put <NAME>`, not committed) ---
 # ADMIN_TOKEN   - required in production; defaults to "dev-admin" locally.
 
-# --- D1 (phase P2, owner's Cloudflare account) ---
-# database_id below is a placeholder for local dev only (`wrangler dev` /
-# `wrangler d1 execute --local`). Before deploying, run
-# `wrangler d1 create machinegrade-validate-db` and replace it with the
-# real id from that command's output.
+# --- D1 (created via `wrangler d1 create machinegrade-validate-db`) ---
 [[d1_databases]]
 binding = "DB"
 database_name = "machinegrade-validate-db"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "7ddce0fa-91a4-4207-bc16-62ab4195e967"
 
 # --- Static assets (public/openapi.yaml, public/llms.txt) ---
 [assets]
